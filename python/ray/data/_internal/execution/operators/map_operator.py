@@ -292,6 +292,9 @@ class MapOperator(OneToOneOperator, ABC):
         self._next_data_task_idx += 1
         self._metrics.on_task_submitted(task_index, inputs)
 
+        import time
+        print(time.time(), f"Task submitted, op={self.name}, task_index={task_index}")
+
         def _output_ready_callback(task_index, output: RefBundle):
             # Since output is streamed, it should only contain one block.
             assert len(output) == 1
@@ -304,6 +307,7 @@ class MapOperator(OneToOneOperator, ABC):
         def _task_done_callback(task_index: int, exception: Optional[Exception]):
             self._metrics.on_task_finished(task_index, exception)
 
+            print(time.time(), f"Task finished, op={self.name}, task_index={task_index}")
             # Estimate number of tasks from inputs received and tasks submitted so far
             estimated_num_tasks = (
                 self.input_dependencies[0].num_outputs_total()

@@ -40,6 +40,7 @@ logger = DatasetLogger(__name__)
 # Holds the full execution state of the streaming topology. It's a dict mapping each
 # operator to tracked streaming exec state.
 Topology = Dict[PhysicalOperator, "OpState"]
+op_to_order: Dict[OpTask, int] = {}
 
 # Min number of seconds between two autoscaling requests.
 MIN_GAP_BETWEEN_AUTOSCALING_REQUESTS = 20
@@ -378,7 +379,8 @@ def process_completed_tasks(
             active_tasks[task.get_waitable()] = (state, task)
 
     max_bytes_to_read_per_op: Dict[OpState, int] = {}
-    if resource_manager.op_resource_allocator_enabled():
+    # Disable resource management.
+    if False and resource_manager.op_resource_allocator_enabled():
         for op, state in topology.items():
             max_bytes_to_read = (
                 resource_manager.op_resource_allocator.max_task_output_bytes_to_read(op)
@@ -514,8 +516,10 @@ def select_operator_to_run(
     """
     # Filter to ops that are eligible for execution.
     ops = []
+    backpressure_policies = [] # Disable any backpressure policies
     for op, state in topology.items():
-        if resource_manager.op_resource_allocator_enabled():
+        # Disable resource reservation.
+        if False and resource_manager.op_resource_allocator_enabled():
             under_resource_limits = (
                 resource_manager.op_resource_allocator.can_submit_new_task(op)
             )
@@ -567,13 +571,21 @@ def select_operator_to_run(
 
     # Run metadata-only operators first. After that, choose the operator with the least
     # memory usage.
-    return min(
+    order = 0
+    for op, state in topology.items():
+        op_to_order[op] = order
+        order += 1
+    
+    picked_order = min(
         ops,
         key=lambda op: (
             not op.throttling_disabled(),
-            resource_manager.get_op_usage(op).object_store_memory,
+            # resource_manager.get_op_usage(op).object_store_memory,
+            - op_to_order[op]
         ),
     )
+    print([op.name for op in ops])
+    return picked_order
 
 
 def _try_to_scale_up_cluster(topology: Topology, execution_id: str):
@@ -666,14 +678,20 @@ def _execution_allowed(op: PhysicalOperator, resource_manager: ResourceManager) 
     inc_indicator = ExecutionResources(
         cpu=1 if inc.cpu else 0,
         gpu=1 if inc.gpu else 0,
-        object_store_memory=0,
+        object_store_memory=inc.object_store_memory,
+        # object_store_memory=0,
     )
 
     # Under global limits; always allow.
     new_usage = global_floored.add(inc_indicator)
-    if new_usage.satisfies_limit(global_limits):
+    satisfy_limit = new_usage.satisfies_limit(global_limits)
+    
+    print(op.name, satisfy_limit, inc_indicator, global_floored)
+    if satisfy_limit:
         return True
 
+    if op_to_order[op] == 1:
+        return False
     # We're over global limits, but execution may still be allowed if memory is the
     # only bottleneck and this wouldn't impact downstream memory limits. This avoids
     # stalling the execution for memory bottlenecks that occur upstream.
