@@ -160,7 +160,7 @@ DEFAULT_OP_RESOURCE_RESERVATION_RATIO = float(
 # as we may not have enough memory buffer for the operator outputs.
 # If the value is too small, the task may be frequently blocked due to
 # streaming generator backpressure.
-DEFAULT_MAX_NUM_BLOCKS_IN_STREAMING_GEN_BUFFER = 4
+DEFAULT_MAX_NUM_BLOCKS_IN_STREAMING_GEN_BUFFER = 2
 
 
 @DeveloperAPI
