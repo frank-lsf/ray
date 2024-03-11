@@ -565,10 +565,6 @@ def select_operator_to_run(
             if state.num_queued() > 0 and not op.completed()
         ]
 
-    # Nothing to run.
-    if not ops:
-        return None
-
     # Run metadata-only operators first. After that, choose the operator with the least
     # memory usage.
     order = 0
@@ -576,6 +572,14 @@ def select_operator_to_run(
         op_to_order[op] = order
         order += 1
     
+    # ops = [
+    #     op for op in ops if op_to_order[op] != 1 or op.num_active_tasks() == 0
+    # ]
+    
+    # Nothing to run.
+    if not ops:
+        return None
+
     picked_order = min(
         ops,
         key=lambda op: (
@@ -686,12 +690,12 @@ def _execution_allowed(op: PhysicalOperator, resource_manager: ResourceManager) 
     new_usage = global_floored.add(inc_indicator)
     satisfy_limit = new_usage.satisfies_limit(global_limits)
     
-    print(op.name, satisfy_limit, inc_indicator, global_floored)
+    print(op.name, satisfy_limit, inc_indicator, new_usage, global_limits)
     if satisfy_limit:
         return True
 
-    if op_to_order[op] == 1:
-        return False
+    # if op_to_order[op] == 1:
+    return False
     # We're over global limits, but execution may still be allowed if memory is the
     # only bottleneck and this wouldn't impact downstream memory limits. This avoids
     # stalling the execution for memory bottlenecks that occur upstream.
