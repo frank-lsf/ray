@@ -39,7 +39,7 @@ class ResourceManager:
     # store memory limit for the streaming executor.
     
     # Change it to 1. 
-    DEFAULT_OBJECT_STORE_MEMORY_LIMIT_FRACTION = 1
+    DEFAULT_OBJECT_STORE_MEMORY_LIMIT_FRACTION = 0.5
 
     # Memory accounting is accurate only for these operators.
     # We'll enable memory reservation if a dataset only contains these operators.
