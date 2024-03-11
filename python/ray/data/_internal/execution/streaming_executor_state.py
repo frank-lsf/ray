@@ -572,9 +572,10 @@ def select_operator_to_run(
         op_to_order[op] = order
         order += 1
     
-    # ops = [
-    #     op for op in ops if op_to_order[op] != 1 or op.num_active_tasks() == 0
-    # ]
+    # Hard coded first to give better initialization. 
+    ops = [
+        op for op in ops if op_to_order[op] != 1 or op.num_active_tasks() <= 1
+    ]
     
     # Nothing to run.
     if not ops:
@@ -694,8 +695,6 @@ def _execution_allowed(op: PhysicalOperator, resource_manager: ResourceManager) 
     if satisfy_limit:
         return True
 
-    # if op_to_order[op] == 1:
-    return False
     # We're over global limits, but execution may still be allowed if memory is the
     # only bottleneck and this wouldn't impact downstream memory limits. This avoids
     # stalling the execution for memory bottlenecks that occur upstream.
