@@ -36,9 +36,7 @@ class ResourceManager:
     GLOBAL_LIMITS_UPDATE_INTERVAL_S = 10
 
     # The fraction of the object store capacity that will be used as the default object
-    # store memory limit for the streaming executor.
-    
-    # Change it to 1. 
+    # store memory limit for the streaming executor.    
     DEFAULT_OBJECT_STORE_MEMORY_LIMIT_FRACTION = 0.5
 
     # Memory accounting is accurate only for these operators.
