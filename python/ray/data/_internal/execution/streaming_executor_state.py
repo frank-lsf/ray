@@ -564,6 +564,10 @@ def select_operator_to_run(
             for op, state in topology.items()
             if state.num_queued() > 0 and not op.completed()
         ]
+    
+    # Nothing to run.
+    if not ops:
+        return None
 
     # Run metadata-only operators first. After that, choose the operator with the least
     # memory usage.
@@ -571,15 +575,6 @@ def select_operator_to_run(
     for op, state in topology.items():
         op_to_order[op] = order
         order += 1
-    
-    # Hard coded first to give better initialization. 
-    ops = [
-        op for op in ops if op_to_order[op] != 1 or op.num_active_tasks() <= 1
-    ]
-    
-    # Nothing to run.
-    if not ops:
-        return None
 
     picked_order = min(
         ops,
@@ -691,7 +686,7 @@ def _execution_allowed(op: PhysicalOperator, resource_manager: ResourceManager) 
     new_usage = global_floored.add(inc_indicator)
     satisfy_limit = new_usage.satisfies_limit(global_limits)
     
-    print(op.name, satisfy_limit, inc_indicator, new_usage, global_limits)
+    print(f'Operator {op.name}, satisfy_limit: {satisfy_limit}, incremental: {inc_indicator}, new_usage: {new_usage}, global: {global_limits}')
     if satisfy_limit:
         return True
 
