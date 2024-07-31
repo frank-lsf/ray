@@ -5,7 +5,6 @@ import time
 import numpy as np
 import timeline_utils
 import ray
-import psutil
 
 LOG_FILE = "three_stage_problem.log"
 
@@ -42,9 +41,9 @@ def main(is_flink: bool, is_conservative_policy: bool):
     NUM_GPUS = 4
     NUM_ROWS_PER_TASK = 10
     BUFFER_SIZE_LIMIT = 30
-    NUM_TASKS = 16 * 5
+    NUM_TASKS = 80
     NUM_ROWS_TOTAL = NUM_ROWS_PER_TASK * NUM_TASKS
-    BLOCK_SIZE = 10 * 1024 * 1024 * 10
+    BLOCK_SIZE = 100 * 1024 * 1024
 
     def produce(batch):
         logger.log({"name": "producer_start", "id": [int(x) for x in batch["id"]]})
@@ -74,6 +73,7 @@ def main(is_flink: bool, is_conservative_policy: bool):
         data_context.is_budget_policy = False  # Disable our policy.
     else:
         data_context.is_budget_policy = True
+        # data_context.is_global_budget_policy = True
 
     ray.init(
         num_cpus=NUM_CPUS,

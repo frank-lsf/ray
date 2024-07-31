@@ -84,11 +84,13 @@ def is_first_op(op) -> bool:
     )
 
 
-def _get_num_slots(op, resource_manager: "ResourceManager") -> int:
+def _get_num_slots(
+    op, resource_manager: "ResourceManager", cpu_taken: int = 0, gpu_taken: int = 0
+) -> int:
     if op.incremental_resource_usage().cpu > 0:
-        return resource_manager.get_global_limits().cpu
+        return resource_manager.get_global_limits().cpu - cpu_taken
     if op.incremental_resource_usage().gpu > 0:
-        return resource_manager.get_global_limits().gpu
+        return resource_manager.get_global_limits().gpu - gpu_taken
     return 0
 
 
@@ -176,55 +178,55 @@ class PerOpMemoryBudget:
         self._budget = min(INITIAL_BUDGET, self._budget)
         logger.debug(
             f"@mzm INITIAL_BUDGET: {humanize(INITIAL_BUDGET)}, "
-            f"self.output_budget: {humanize(self._budget)}, "
-            f"time elapsed: {time_elapsed:.2f}s, "
+            f"budget: {humanize(self._budget)}, "
+            f"time_elapsed: {time_elapsed:.2f}s, "
             f"grow_rate: {humanize(grow_rate)}/s"
         )
         self._last_replenish_time = now
 
 
 def _get_per_op_grow_rate(op, resource_manager: "ResourceManager") -> float:
-    time_for_pipeline_to_process_one_data = 0
+    total_processing_time = 0
+
     next_op = op
-    output_input_multipler = 1
+    output_input_multipler = (
+        op._metrics.average_bytes_outputs_per_task or 0
+    ) / ray.data.DataContext.get_current().target_max_block_size
+    if output_input_multipler == 0:
+        output_input_multipler = 1
+
+    cpu_taken = op.incremental_resource_usage().cpu * op.num_active_tasks()
+    gpu_taken = op.incremental_resource_usage().gpu * op.num_active_tasks()
 
     while len(next_op.output_dependencies) > 0:
         assert len(next_op.output_dependencies) == 1
-
         next_op = next_op.output_dependencies[0]
 
-        # Initialize grow rate to be 0.
+        time_for_op = next_op._metrics.average_task_duration or 1
+
         if (
-            not next_op._metrics.average_task_duration
-            or not next_op._metrics.average_bytes_inputs_per_task
-            or not next_op._metrics.average_bytes_outputs_per_task
-        ):
-            continue
-
-        time_for_op = (
-            output_input_multipler
-            * next_op._metrics.average_task_duration
-            / next_op._metrics.average_bytes_inputs_per_task
-        )
-
-        output_input_multipler *= (
             next_op._metrics.average_bytes_outputs_per_task
-            / next_op._metrics.average_bytes_inputs_per_task
+            and (next_op._metrics.average_bytes_inputs_per_task or 0) > 0
+        ):
+            output_input_multipler *= (
+                next_op._metrics.average_bytes_outputs_per_task
+                / next_op._metrics.average_bytes_inputs_per_task
+            )
+
+        num_slots = _get_num_slots(next_op, resource_manager, cpu_taken, gpu_taken)
+
+        processing_time = time_for_op / num_slots * output_input_multipler
+
+        total_processing_time += processing_time
+
+        logger.debug(
+            f"@lsf {next_op.name} time_for_op {time_for_op:.2f}s num_slots {num_slots} alpha {output_input_multipler} "
+            f"processing_time {processing_time:.2f}s"
         )
 
-        # @lsf/@mzm: Even if an op takes no CPU (e.g. runs on GPU), we still need to add it
-        # to the pipeline processing time. There might be room for optimization if the
-        # output size of an op is nearly 0.
-        # if next_op.incremental_resource_usage().cpu == 0:
-        #     continue
-        time_for_pipeline_to_process_one_data += time_for_op
-
-    num_executors_not_running_op = (
-        resource_manager.get_global_limits().cpu
-        - op.num_active_tasks() * op.incremental_resource_usage().cpu
+    op_output_size = op._metrics.average_bytes_outputs_per_task or 0
+    ret = op_output_size / total_processing_time if total_processing_time > 0 else 0
+    logger.debug(
+        f"@lsf op_output_size {humanize(op_output_size)} total_processing_time {total_processing_time:.2f}s grow_rate {humanize(ret)}/s"
     )
-
-    if time_for_pipeline_to_process_one_data == 0:
-        return 0
-
-    return (1 / time_for_pipeline_to_process_one_data) * num_executors_not_running_op
+    return ret
