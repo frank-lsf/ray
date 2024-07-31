@@ -337,12 +337,13 @@ class OpState:
         ):
             return True
 
-        INITIAL_BUDGET = resource_manager.get_global_limits().object_store_memory
+        DEFAULT_OUTPUT_SIZE = resource_manager.get_global_limits().object_store_memory
 
         if not ray.data.DataContext.get_current().is_global_budget_policy:
+            DEFAULT_OUTPUT_SIZE = 1000 * 1024 * 1024
             self.output_budget.replenish(self.op, resource_manager)
             output_size = (
-                self.op._metrics.average_bytes_outputs_per_task or INITIAL_BUDGET
+                self.op._metrics.average_bytes_outputs_per_task or DEFAULT_OUTPUT_SIZE
             )
             logger.debug(
                 f"@mzm {self.op}, "
@@ -353,7 +354,7 @@ class OpState:
 
         output_size = self.op._metrics.average_bytes_outputs_per_task
         if output_size is None:
-            output_size = INITIAL_BUDGET if is_first_op(self.op) else 0
+            output_size = DEFAULT_OUTPUT_SIZE if is_first_op(self.op) else 0
         logger.debug(
             f"@lsf {self.op}, "
             f"global_budget: {humanize(resource_manager.global_memory_budget.get())}, "

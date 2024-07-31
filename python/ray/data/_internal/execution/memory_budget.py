@@ -187,13 +187,14 @@ class PerOpMemoryBudget:
 
 def _get_per_op_grow_rate(op, resource_manager: "ResourceManager") -> float:
     total_processing_time = 0
+    op_output_size = op._metrics.average_bytes_outputs_per_task or 0
 
     next_op = op
     output_input_multipler = (
         op._metrics.average_bytes_outputs_per_task or 0
     ) / ray.data.DataContext.get_current().target_max_block_size
     if output_input_multipler == 0:
-        output_input_multipler = 1
+        output_input_multipler = 5  # TODO: This can be a user hint
 
     cpu_taken = op.incremental_resource_usage().cpu * op.num_active_tasks()
     gpu_taken = op.incremental_resource_usage().gpu * op.num_active_tasks()
@@ -202,8 +203,16 @@ def _get_per_op_grow_rate(op, resource_manager: "ResourceManager") -> float:
         assert len(next_op.output_dependencies) == 1
         next_op = next_op.output_dependencies[0]
 
-        time_for_op = next_op._metrics.average_task_duration or 1
-
+        # TODO: The current metrics seem to be overestimating the actual task duration.
+        # time_for_op = next_op._metrics.average_task_duration or 1
+        time_for_op = 0.5
+        num_slots = _get_num_slots(next_op, resource_manager, cpu_taken, gpu_taken)
+        processing_time = time_for_op / num_slots * output_input_multipler
+        total_processing_time += processing_time
+        logger.debug(
+            f"@lsf {next_op.name} time_for_op {time_for_op:.2f}s num_slots {num_slots} alpha {output_input_multipler} "
+            f"processing_time {processing_time:.2f}s"
+        )
         if (
             next_op._metrics.average_bytes_outputs_per_task
             and (next_op._metrics.average_bytes_inputs_per_task or 0) > 0
@@ -213,18 +222,6 @@ def _get_per_op_grow_rate(op, resource_manager: "ResourceManager") -> float:
                 / next_op._metrics.average_bytes_inputs_per_task
             )
 
-        num_slots = _get_num_slots(next_op, resource_manager, cpu_taken, gpu_taken)
-
-        processing_time = time_for_op / num_slots * output_input_multipler
-
-        total_processing_time += processing_time
-
-        logger.debug(
-            f"@lsf {next_op.name} time_for_op {time_for_op:.2f}s num_slots {num_slots} alpha {output_input_multipler} "
-            f"processing_time {processing_time:.2f}s"
-        )
-
-    op_output_size = op._metrics.average_bytes_outputs_per_task or 0
     ret = op_output_size / total_processing_time if total_processing_time > 0 else 0
     logger.debug(
         f"@lsf op_output_size {humanize(op_output_size)} total_processing_time {total_processing_time:.2f}s grow_rate {humanize(ret)}/s"
