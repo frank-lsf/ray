@@ -5,6 +5,7 @@ import queue
 from threading import Thread
 from types import GeneratorType
 from typing import Any, Callable, Iterable, Iterator, List, Optional
+import time
 
 import numpy as np
 import pandas as pd
@@ -45,6 +46,8 @@ from ray.data.block import (
 from ray.data.context import DataContext
 from ray.data.exceptions import UserCodeException
 from ray.util.rpdb import _is_ray_debugger_enabled
+
+from ray.data._internal.execution.pipeline_metrics_tracker import PipelineMetricsTracker
 
 
 class _MapActorContext:
@@ -279,7 +282,24 @@ def _generate_transform_fn_for_map_batches(
                         # operators output empty blocks with no schema.
                         res = [batch]
                     else:
+                        # Takes around 0.0002 seconds (negligible)
+                        num_rows = BlockAccessor.for_block(
+                            BlockAccessor.batch_to_arrow_block(batch)
+                        ).num_rows()
+
+                        start = time.perf_counter()
                         res = fn(batch)
+                        end = time.perf_counter()
+                        tracker = PipelineMetricsTracker.options(
+                            name="tracker", get_if_exists=True
+                        ).remote()
+                        tracker.record.remote(
+                            stage="inference",
+                            pid=ray.get_runtime_context().get_worker_id(),
+                            end_time=end,
+                            wall_time=(end - start),
+                            num_rows=num_rows,
+                        )
                         if not isinstance(res, GeneratorType):
                             res = [res]
                 except ValueError as e:
@@ -370,8 +390,20 @@ def _generate_transform_fn_for_map_rows(
 ) -> MapTransformCallable[Row, Row]:
     def transform_fn(rows: Iterable[Row], _: TaskContext) -> Iterable[Row]:
         for row in rows:
+            start = time.perf_counter()
             out_row = fn(row)
             _validate_row_output(out_row)
+            end = time.perf_counter()
+            tracker = PipelineMetricsTracker.options(
+                name="tracker", get_if_exists=True
+            ).remote()
+            tracker.record.remote(
+                stage="preprocess",
+                pid=ray.get_runtime_context().get_worker_id(),
+                end_time=end,
+                wall_time=(end - start),
+                num_rows=1,
+            )
             yield out_row
 
     return transform_fn
@@ -448,7 +480,7 @@ def _create_map_transformer_for_row_based_map_op(
 
 def generate_map_rows_fn(
     target_max_block_size: int,
-) -> (Callable[[Iterator[Block], TaskContext, UserDefinedFunction], Iterator[Block]]):
+) -> Callable[[Iterator[Block], TaskContext, UserDefinedFunction], Iterator[Block]]:
     """Generate function to apply the UDF to each record of blocks."""
     context = DataContext.get_current()
 
@@ -468,7 +500,7 @@ def generate_map_rows_fn(
 
 def generate_flat_map_fn(
     target_max_block_size: int,
-) -> (Callable[[Iterator[Block], TaskContext, UserDefinedFunction], Iterator[Block]]):
+) -> Callable[[Iterator[Block], TaskContext, UserDefinedFunction], Iterator[Block]]:
     """Generate function to apply the UDF to each record of blocks,
     and then flatten results.
     """
@@ -491,7 +523,7 @@ def generate_flat_map_fn(
 
 def generate_filter_fn(
     target_max_block_size: int,
-) -> (Callable[[Iterator[Block], TaskContext, UserDefinedFunction], Iterator[Block]]):
+) -> Callable[[Iterator[Block], TaskContext, UserDefinedFunction], Iterator[Block]]:
     """Generate function to apply the UDF to each record of blocks,
     and filter out records that do not satisfy the given predicate.
     """
