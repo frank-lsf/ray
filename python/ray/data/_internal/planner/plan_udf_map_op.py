@@ -282,7 +282,6 @@ def _generate_transform_fn_for_map_batches(
                         # operators output empty blocks with no schema.
                         res = [batch]
                     else:
-                        # Takes around 0.0002 seconds (negligible)
                         num_rows = BlockAccessor.for_block(
                             BlockAccessor.batch_to_arrow_block(batch)
                         ).num_rows()
