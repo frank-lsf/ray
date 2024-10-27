@@ -116,6 +116,9 @@ def random_work():
         np.random.rand(5 * 1024 * 1024)  # 40 MB
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="setproctitle does not change psutil.cmdline"
+)
 def test_node_physical_stats(enable_test_module, shutdown_only):
     addresses = ray.init(include_dashboard=True, num_cpus=6)
 
@@ -335,6 +338,11 @@ def test_report_stats():
         print(record.gauge.name)
         print(record)
     assert len(records) == 36
+    # Verify IsHeadNode tag
+    for record in records:
+        if record.gauge.name.startswith("node_"):
+            assert "IsHeadNode" in record.tags
+            assert record.tags["IsHeadNode"] == "true"
     # Test stats without raylets
     STATS_TEMPLATE["raylet"] = {}
     records = agent._to_records(STATS_TEMPLATE, cluster_stats)
@@ -439,13 +447,14 @@ def test_report_stats_gpu():
         index = 0
         for record in records:
             if record.tags["GpuIndex"] == "3":
-                assert record.tags == {"ip": ip, "GpuIndex": "3"}
+                assert record.tags == {"ip": ip, "GpuIndex": "3", "IsHeadNode": "true"}
             else:
                 assert record.tags == {
                     "ip": ip,
                     # The tag value must be string for prometheus.
                     "GpuIndex": str(index),
                     "GpuDeviceName": "NVIDIA A10G",
+                    "IsHeadNode": "true",
                 }
 
             if name == "node_gram_available":
@@ -793,7 +802,7 @@ def test_get_task_traceback_running_task(shutdown_only):
     params = {
         "task_id": task.task_id().hex(),
         "attempt_number": 0,
-        "node_id": ray.get_runtime_context().node_id.hex(),
+        "node_id": ray.get_runtime_context().get_node_id(),
     }
 
     def verify():
@@ -840,7 +849,7 @@ def test_get_memory_profile_running_task(shutdown_only):
     params = {
         "task_id": task.task_id().hex(),
         "attempt_number": 0,
-        "node_id": ray.get_runtime_context().node_id.hex(),
+        "node_id": ray.get_runtime_context().get_node_id(),
         "duration": 5,
     }
 

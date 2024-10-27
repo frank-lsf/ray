@@ -61,7 +61,7 @@ class ImageDatasource(FileBasedDatasource):
         self.transform = transform
 
         meta_provider = file_based_datasource_kwargs.get("meta_provider", None)
-        if isinstance(meta_provider, _ImageFileMetadataProvider):
+        if isinstance(meta_provider, ImageFileMetadataProvider):
             self._encoding_ratio = self._estimate_files_encoding_ratio()
             meta_provider._set_encoding_ratio(self._encoding_ratio)
         else:
@@ -155,7 +155,7 @@ class ImageDatasource(FileBasedDatasource):
         return max(ratio, IMAGE_ENCODING_RATIO_ESTIMATE_LOWER_BOUND)
 
 
-class _ImageFileMetadataProvider(DefaultFileMetadataProvider):
+class ImageFileMetadataProvider(DefaultFileMetadataProvider):
     def _set_encoding_ratio(self, encoding_ratio: int):
         """Set image file encoding ratio, to provide accurate size in bytes metadata."""
         self._encoding_ratio = encoding_ratio

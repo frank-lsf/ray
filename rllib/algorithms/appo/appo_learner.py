@@ -6,8 +6,8 @@ from ray.rllib.algorithms.impala.impala_learner import IMPALALearner
 from ray.rllib.core.learner.learner import Learner
 from ray.rllib.core.learner.utils import update_target_network
 from ray.rllib.core.rl_module.apis.target_network_api import TargetNetworkAPI
-from ray.rllib.core.rl_module.marl_module import MultiAgentRLModuleSpec
-from ray.rllib.core.rl_module.rl_module import SingleAgentRLModuleSpec
+from ray.rllib.core.rl_module.multi_rl_module import MultiRLModuleSpec
+from ray.rllib.core.rl_module.rl_module import RLModuleSpec
 from ray.rllib.utils.annotations import override
 from ray.rllib.utils.lambda_defaultdict import LambdaDefaultDict
 from ray.rllib.utils.metrics import (
@@ -54,18 +54,23 @@ class APPOLearner(IMPALALearner):
         self,
         *,
         module_id: ModuleID,
-        module_spec: SingleAgentRLModuleSpec,
+        module_spec: RLModuleSpec,
         config_overrides: Optional[Dict] = None,
         new_should_module_be_updated: Optional[ShouldModuleBeUpdatedFn] = None,
-    ) -> MultiAgentRLModuleSpec:
-        marl_spec = super().add_module(module_id=module_id)
+    ) -> MultiRLModuleSpec:
+        marl_spec = super().add_module(
+            module_id=module_id,
+            module_spec=module_spec,
+            config_overrides=config_overrides,
+            new_should_module_be_updated=new_should_module_be_updated,
+        )
         # Create target networks for added Module, if applicable.
         if isinstance(self.module[module_id].unwrapped(), TargetNetworkAPI):
             self.module[module_id].unwrapped().make_target_networks()
         return marl_spec
 
     @override(IMPALALearner)
-    def remove_module(self, module_id: str) -> MultiAgentRLModuleSpec:
+    def remove_module(self, module_id: str) -> MultiRLModuleSpec:
         marl_spec = super().remove_module(module_id)
         self.curr_kl_coeffs_per_module.pop(module_id)
         return marl_spec
@@ -85,14 +90,14 @@ class APPOLearner(IMPALALearner):
             # TODO (avnish) Using steps trained here instead of sampled ... I'm not sure
             #  why the other implementation uses sampled.
             #  The difference in steps sampled/trained is pretty
-            #  much always going to be larger than self.config.num_sgd_iter *
+            #  much always going to be larger than self.config.num_epochs *
             #  self.config.minibatch_buffer_size unless the number of steps collected
             #  is really small. The thing is that the default rollout fragment length
-            #  is 50, so the minibatch buffer size * num_sgd_iter is going to be
+            #  is 50, so the minibatch buffer size * num_epochs is going to be
             #  have to be 50 to even meet the threshold of having delayed target
             #  updates.
             #  We should instead have the target / kl threshold update be based off
-            #  of the train_batch_size * some target update frequency * num_sgd_iter.
+            #  of the train_batch_size * some target update frequency * num_epochs.
 
             last_update_ts_key = (module_id, LAST_TARGET_UPDATE_TS)
             if timestep - self.metrics.peek(
@@ -123,7 +128,7 @@ class APPOLearner(IMPALALearner):
 
     @abc.abstractmethod
     def _update_module_kl_coeff(self, module_id: ModuleID, config: APPOConfig) -> None:
-        """Dynamically update the KL loss coefficients of each module with.
+        """Dynamically update the KL loss coefficients of each module.
 
         The update is completed using the mean KL divergence between the action
         distributions current policy and old policy of each module. That action

@@ -16,7 +16,6 @@ import ray.util.state as state_api
 from ray import serve
 from ray._private.test_utils import SignalActor, wait_for_condition
 from ray.serve._private.common import (
-    ApplicationStatus,
     DeploymentID,
     DeploymentStatus,
     DeploymentStatusTrigger,
@@ -38,7 +37,7 @@ from ray.serve._private.test_utils import (
 )
 from ray.serve.config import AutoscalingConfig
 from ray.serve.handle import DeploymentHandle
-from ray.serve.schema import ServeDeploySchema
+from ray.serve.schema import ApplicationStatus, ServeDeploySchema
 from ray.util.state import list_actors
 
 
@@ -534,6 +533,9 @@ def test_cold_start_time(serve_instance):
 
     wait_for_condition(check_running)
 
+    assert requests.post("http://localhost:8000/-/healthz").status_code == 200
+    assert requests.post("http://localhost:8000/-/routes").status_code == 200
+
     start = time.time()
     result = handle.remote().result()
     cold_start_time = time.time() - start
@@ -1023,7 +1025,7 @@ import os
 
 @serve.deployment
 def g():
-    signal = ray.get_actor("signal", namespace="serve")
+    signal = ray.get_actor("signal123")
     ray.get(signal.wait.remote())
     return os.getpid()
 
@@ -1068,7 +1070,7 @@ app = g.bind()
     )
 
     signal.send.remote()
-    existing_pid = ray.get(ref)
+    existing_pid = int(ray.get(ref))
 
     # Step 4: Change the max replicas to 2
     app_config["deployments"][0]["autoscaling_config"]["max_replicas"] = 2
@@ -1082,7 +1084,7 @@ app = g.bind()
 
     # Step 5: Make sure it is the same replica (lightweight change).
     for _ in range(10):
-        other_pid = ray.get(send_request.remote())
+        other_pid = int(ray.get(send_request.remote()))
         assert other_pid == existing_pid
 
     # Step 6: Make sure initial_replicas overrides previous replicas
@@ -1098,9 +1100,7 @@ app = g.bind()
     )
 
     # Step 7: Make sure original replica is still running (lightweight change)
-    pids = set()
-    for _ in range(15):
-        pids.add(ray.get(send_request.remote()))
+    pids = {int(pid) for pid in ray.get([send_request.remote() for _ in range(20)])}
     assert existing_pid in pids
 
 
