@@ -92,7 +92,7 @@ class ImageDatasource(FileBasedDatasource):
         # @ronyw: Casting to `np.array` type here so we don't need to do it
         # in the `collate_fn`
         array = np.array(image)
-        item = {"image": array}
+        item = {"image": array, "path": path}
         yield item
 
     def _rows_per_file(self):
