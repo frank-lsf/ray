@@ -210,6 +210,7 @@ class FileBasedDatasource(Datasource):
             DataContext._set_current(ctx)
             fs = _unwrap_s3_serialization_workaround(filesystem)
             builder = DelegatingBlockBuilder()
+            paths = []
             for read_path in read_paths:
                 partitions: Dict[str, str] = {}
                 if partitioning is not None:
@@ -225,14 +226,21 @@ class FileBasedDatasource(Datasource):
                     for block in read_stream(f, read_path):
                         if partitions:
                             block = _add_partitions(block, partitions)
-                        if self._include_paths:
-                            block_accessor = BlockAccessor.for_block(block)
-                            block = block_accessor.append_column(
-                                "path", [read_path] * block_accessor.num_rows()
-                            )
+                        # if self._include_paths:
+                        #     block_accessor = BlockAccessor.for_block(block)
+                        #     block = block_accessor.append_column(
+                        #         "path", [read_path] * block_accessor.num_rows()
+                        #     )
                         builder.add(block)
+                        paths.append(read_path)
 
-            yield builder.build()
+            # @lsf/@ronyw
+            block = builder.build()
+            if self._include_paths:
+                block_accessor = BlockAccessor.for_block(block)
+                block = block_accessor.append_column("path", paths)
+
+            yield block
 
         def create_read_task_fn(read_paths, num_threads):
             def read_task_fn():
