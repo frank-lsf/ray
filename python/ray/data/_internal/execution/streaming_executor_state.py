@@ -378,11 +378,11 @@ class OpState:
                 / next_op._metrics.average_bytes_inputs_per_task
             )
 
-            if next_op.incremental_resource_usage().cpu == 0:
+            # if next_op.incremental_resource_usage().cpu == 0:
                 # @MaoZiming: if it is on GPU.
                 # However, time_for_op still accumulates.
                 # If the last stage is on GPU, then you don't have to care.
-                continue
+                # continue
             time_for_pipeline_to_process_one_data += time_for_op
             time_for_op = 0
 
@@ -414,7 +414,7 @@ class OpState:
         # Cap output_budget to object_store_memory
         self.output_budget = min(INITIAL_BUDGET, self.output_budget)
         logger.debug(
-            f"@mzm INITIAL_BUDGET: {INITIAL_BUDGET}, "
+            f"@mzm {self.op.name} INITIAL_BUDGET: {INITIAL_BUDGET}, "
             f"self.output_budget: {self.output_budget}, "
             f"time elapsed: {time_elapsed} "
             f"grow_rate: {grow_rate}"
